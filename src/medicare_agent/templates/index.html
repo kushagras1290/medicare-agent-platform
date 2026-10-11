@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>MediCare Review Console</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="app-bar">
+    <a class="brand" href="/" aria-label="MediCare review queue">
+      <span class="brand-mark" aria-hidden="true">M</span>
+      <span><strong>MediCare</strong><small>Review queue</small></span>
+    </a>
+    <div class="environment"><span></span> Synthetic environment</div>
+  </header>
+
+  <main class="shell">
+    <section class="notice" aria-label="Safety notice">
+      <span>Simulation only</span>
+      Synthetic records, rules and mock dispatches. Not approved for clinical use or real-patient contact.
+    </section>
+
+    <section class="queue-header" aria-labelledby="queue-title">
+      <div>
+        <p class="kicker">Operations</p>
+        <h1 id="queue-title">Follow-up reviews</h1>
+        <p class="subtitle">Agent proposals waiting for a human decision.</p>
+      </div>
+      <div id="access-controls" class="access-controls">
+        <label class="key-field">
+          <span>Reviewer key</span>
+          <input id="reviewer-key" type="password" autocomplete="off" placeholder="Enter access key">
+        </label>
+        <button id="refresh" type="button">Connect</button>
+      </div>
+    </section>
+
+    <section class="toolbar" aria-label="Queue controls">
+      <div class="filter-group">
+        <label for="status-filter">Status</label>
+        <select id="status-filter">
+          <option value="pending_review">Pending review</option>
+          <option value="human_escalated">Human escalated</option>
+          <option value="approved">Approved</option>
+          <option value="dispatched">Dispatched</option>
+          <option value="rejected">Rejected</option>
+          <option value="on_hold">On hold</option>
+          <option value="">All cases</option>
+        </select>
+      </div>
+      <p class="queue-meta"><strong id="case-count">—</strong> <span id="count-label">cases</span><i></i><span id="last-updated">Not connected</span></p>
+    </section>
+
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+
+    <section class="queue" aria-label="Follow-up cases">
+      <div class="queue-columns" aria-hidden="true">
+        <span>Customer</span><span>Rule signal</span><span>Created</span><span></span>
+      </div>
+      <div id="case-list" class="case-list">
+        <div class="empty-state">
+          <span class="empty-icon" aria-hidden="true">↗</span>
+          <h2>Connect to the queue</h2>
+          <p>Enter the local reviewer key to load synthetic cases.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+  <aside id="review-drawer" class="review-drawer" aria-labelledby="drawer-title" aria-hidden="true">
+    <header class="drawer-header">
+      <div><p class="kicker">Human decision</p><h2 id="drawer-title">Case</h2></div>
+      <button id="close-drawer" class="icon-button" type="button" aria-label="Close case">×</button>
+    </header>
+    <div id="case-detail" class="drawer-content"></div>
+    <form id="review-form" class="review-form" hidden>
+      <label>
+        Decision rationale
+        <textarea id="rationale" minlength="8" maxlength="1000" required placeholder="Add a concise reviewer note"></textarea>
+      </label>
+      <div class="decision-actions">
+        <button type="submit" data-decision="approve" class="primary">Approve</button>
+        <button type="submit" data-decision="hold" class="secondary">Hold</button>
+        <button type="submit" data-decision="reject" class="danger">Reject</button>
+      </div>
+      <p class="policy-note">Cases with policy holds are escalated even when approved. They cannot enter dispatch.</p>
+    </form>
+  </aside>
+</body>
+</html>

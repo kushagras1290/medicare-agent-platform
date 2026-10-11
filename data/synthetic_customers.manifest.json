@@ -1,0 +1,46 @@
+{
+  "clinical_style_parameters": [
+    "bp_systolic_mm_hg",
+    "bp_diastolic_mm_hg",
+    "heart_rate_bpm",
+    "spo2_pct",
+    "temperature_c",
+    "respiratory_rate_bpm",
+    "weight_kg",
+    "bmi",
+    "creatinine_mg_dl",
+    "egfr_ml_min_1_73m2",
+    "glucose_mg_dl",
+    "hemoglobin_g_dl",
+    "sodium_mmol_l",
+    "potassium_mmol_l",
+    "phq9_score"
+  ],
+  "clinical_use_approved": false,
+  "generator_seed": 20261011,
+  "metadata_fields": [
+    "customer_id",
+    "age",
+    "sex_at_birth",
+    "conditions",
+    "missed_appointment",
+    "consent_status",
+    "last_contact_at",
+    "measured_at"
+  ],
+  "parameter_count": 15,
+  "rows": 10000,
+  "sha256": "18bb0dccca140efe3ee68e807ba99e810fd3b36cbb9d298695e9ad2cdfd8b0b2",
+  "snapshot_at": "2026-10-11T08:00:00+00:00",
+  "synthetic_only": true,
+  "validation": {
+    "counts": {
+      "consent:synthetic_opted_in": 9394,
+      "consent:synthetic_withheld": 606,
+      "missed:false": 8359,
+      "missed:true": 1641
+    },
+    "rows": 10000,
+    "unique_ids": 10000
+  }
+}

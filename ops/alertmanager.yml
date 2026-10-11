@@ -1,0 +1,13 @@
+route:
+  receiver: local-visible-sink
+  group_by: [alertname, severity]
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: local-visible-sink
+
+# Local verification keeps alerts visible in Alertmanager without contacting people.
+# Production must replace this receiver with an organization-owned PagerDuty,
+# Opsgenie, Slack, email or webhook route and attach that evidence to release gates.

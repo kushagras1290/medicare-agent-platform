@@ -1,0 +1,121 @@
+name: medicare-agent
+
+x-app-env: &app-env
+  ENVIRONMENT: local
+  DATABASE_URL: postgresql+psycopg://medicare:${POSTGRES_PASSWORD:-local-demo-password}@db:5432/medicare
+  SERVICE_API_KEY: ${SERVICE_API_KEY:-local-service-key-change-me-32-chars}
+  REVIEWER_API_KEYS: ${REVIEWER_API_KEYS:-reviewer-demo:local-reviewer-key-change-me-32-chars}
+  MODEL_GATEWAY_URL: http://model-gateway:8091
+  MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-local-gateway-key-change-me-32-chars}
+  CALLER_SERVICE_URL: http://caller:8092
+  CALLER_SERVICE_API_KEY: ${CALLER_SERVICE_API_KEY:-local-caller-key-change-me-32-chars}
+  API_INTERNAL_URL: http://api:8000
+  ALLOW_REAL_PATIENT_DATA: "false"
+  ALLOW_LIVE_DISPATCH: "false"
+  REQUIRE_HUMAN_REVIEW: "true"
+  ALLOWED_HOSTS: "127.0.0.1,localhost,api,testserver"
+
+services:
+  db:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: medicare
+      POSTGRES_USER: medicare
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medicare -d medicare"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - medicare-db:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks: [backend]
+
+  model-gateway:
+    build: .
+    command: ["uvicorn", "services.model_gateway.main:app", "--host", "0.0.0.0", "--port", "8091"]
+    environment:
+      MODEL_GATEWAY_MODE: ${MODEL_GATEWAY_MODE:-stub}
+      MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-local-gateway-key-change-me-32-chars}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health/live', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [backend]
+
+  caller:
+    build: .
+    command: ["uvicorn", "services.caller.main:app", "--host", "0.0.0.0", "--port", "8092"]
+    environment:
+      CALLER_MODE: mock
+      CALLER_SERVICE_API_KEY: ${CALLER_SERVICE_API_KEY:-local-caller-key-change-me-32-chars}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/health/live', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [backend]
+
+  migrate:
+    build: .
+    command: ["sh", "-c", "alembic upgrade head && medicare bootstrap --csv data/synthetic_customers.csv"]
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  api:
+    build: .
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      model-gateway:
+        condition: service_healthy
+      caller:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [frontend, backend]
+
+  automation-worker:
+    build: .
+    command: ["python", "-m", "medicare_agent.worker", "automation"]
+    environment: *app-env
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [backend]
+
+  dispatch-worker:
+    build: .
+    command: ["python", "-m", "medicare_agent.worker", "dispatch"]
+    environment: *app-env
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [backend]
+
+volumes:
+  medicare-db:
+
+networks:
+  frontend:
+  backend:
+    internal: true

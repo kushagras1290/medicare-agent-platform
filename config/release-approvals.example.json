@@ -1,0 +1,16 @@
+{
+  "release_id": "replace-with-change-record-id",
+  "environment": "production",
+  "generated_at": "2026-10-11T00:00:00Z",
+  "approvals": [
+    {"gate":"clinical_policy","status":"pending","owner":"Clinical safety owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:clinical-policy"},
+    {"gate":"privacy_legal","status":"pending","owner":"Privacy and legal owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:privacy-legal"},
+    {"gate":"security_review","status":"pending","owner":"Security owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:security-review"},
+    {"gate":"identity_access","status":"pending","owner":"IAM owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:identity-access"},
+    {"gate":"backup_restore","status":"pending","owner":"Database owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:backup-restore"},
+    {"gate":"monitoring_alerting","status":"pending","owner":"Operations owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:monitoring-alerting"},
+    {"gate":"incident_response","status":"pending","owner":"Incident commander","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:incident-response"},
+    {"gate":"consent_governance","status":"pending","owner":"Consent owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:consent-governance"},
+    {"gate":"provider_contracts","status":"pending","owner":"Procurement owner","approval_id":"pending","approved_at":null,"expires_at":null,"evidence_uri":"urn:pending:provider-contracts"}
+  ]
+}

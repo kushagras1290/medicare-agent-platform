@@ -1,0 +1,82 @@
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: null
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+
+  model-gateway:
+    environment:
+      MODEL_GATEWAY_API_KEY: null
+      MODEL_GATEWAY_API_KEY_FILE: /run/secrets/model_gateway_api_key
+      OPENAI_API_KEY: null
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets: [model_gateway_api_key, openai_api_key]
+
+  caller:
+    environment:
+      CALLER_MODE: ${CALLER_MODE:?set CALLER_MODE to mock or http}
+      CALLER_SERVICE_API_KEY: null
+      CALLER_SERVICE_API_KEY_FILE: /run/secrets/caller_service_api_key
+      CALLER_PROVIDER_URL: ${CALLER_PROVIDER_URL:-}
+      CALLER_PROVIDER_API_KEY: null
+      CALLER_PROVIDER_API_KEY_FILE: /run/secrets/caller_provider_api_key
+    secrets: [caller_service_api_key, caller_provider_api_key]
+
+  migrate:
+    environment: &production-app-env
+      ENVIRONMENT: production
+      DATABASE_URL: null
+      DATABASE_URL_FILE: /run/secrets/database_url
+      SERVICE_API_KEY: null
+      SERVICE_API_KEY_FILE: /run/secrets/service_api_key
+      MODEL_GATEWAY_API_KEY: null
+      MODEL_GATEWAY_API_KEY_FILE: /run/secrets/model_gateway_api_key
+      CALLER_SERVICE_API_KEY: null
+      CALLER_SERVICE_API_KEY_FILE: /run/secrets/caller_service_api_key
+      REVIEWER_AUTH_MODE: oidc
+      OIDC_ISSUER: ${OIDC_ISSUER:?set OIDC_ISSUER}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:?set OIDC_AUDIENCE}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:?set OIDC_JWKS_URL}
+      OIDC_REQUIRE_MFA: "true"
+      ENFORCE_HTTPS: "true"
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set ALLOWED_HOSTS}
+      RELEASE_APPROVALS_PATH: /run/config/release-approvals.json
+      RELEASE_APPROVALS_SHA256: ${RELEASE_APPROVALS_SHA256:?set RELEASE_APPROVALS_SHA256}
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    volumes:
+      - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
+
+  api:
+    environment: *production-app-env
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    volumes:
+      - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
+
+  automation-worker:
+    environment: *production-app-env
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    volumes:
+      - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
+
+  dispatch-worker:
+    environment: *production-app-env
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    volumes:
+      - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
+
+secrets:
+  postgres_password:
+    external: true
+  database_url:
+    external: true
+  service_api_key:
+    external: true
+  model_gateway_api_key:
+    external: true
+  openai_api_key:
+    external: true
+  caller_service_api_key:
+    external: true
+  caller_provider_api_key:
+    external: true

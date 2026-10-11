@@ -1,0 +1,46 @@
+groups:
+  - name: medicare-safety-and-reliability
+    rules:
+      - alert: MediCareApiUnavailable
+        expr: up{job="medicare-api"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "MediCare API scrape is unavailable"
+      - alert: MediCareElevatedServerErrors
+        expr: |
+          sum(rate(medicare_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(medicare_http_requests_total[5m])), 0.001) > 0.02
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "MediCare API 5xx ratio is above 2%"
+      - alert: MediCareReviewQueueAging
+        expr: medicare_oldest_pending_review_age_seconds > 900
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "A synthetic review has waited more than 15 minutes"
+      - alert: MediCareDeadLetterPresent
+        expr: medicare_outbox_dead_letters > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "A dispatch event entered the dead-letter state"
+      - alert: MediCareProviderFailures
+        expr: increase(medicare_provider_failures[10m]) > 2
+        labels: {severity: warning}
+        annotations:
+          summary: "Model provider failures increased"
+      - alert: MediCareWorkerHeartbeatMissing
+        expr: medicare_worker_heartbeat_age_seconds > 120
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "A MediCare worker heartbeat is stale"
+      - alert: MediCareAuditVerificationFailure
+        expr: increase(medicare_audit_verification_failures_total[5m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "Audit-chain verification failed"
