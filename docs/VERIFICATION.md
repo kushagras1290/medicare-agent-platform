@@ -64,6 +64,43 @@ Issues found and fixed during the two bug-hunting cycles:
 - A 10-VU, 30-second local k6 rerun passed: 508 requests, zero HTTP failures, 762/762 checks, p95 910.12 ms and p99 1.20 seconds.
 - The reviewer UI was exercised in Chromium at desktop and 390-pixel mobile widths with zero console errors.
 
+## Review hardening verification (2026-10-13)
+
+Executed locally with Python 3.14.3, uv 0.12.3 and Docker Engine 28.3.3.
+
+- `pytest --cov`: 134 passed, 100% statement and branch coverage across `medicare_agent` and
+  `services`. With `TEST_DATABASE_URL` pointing at PostgreSQL 17.11: 133 passed, 1 skipped.
+  Running on PostgreSQL exposed that SQLite had never enforced foreign keys; the engine now enables
+  `PRAGMA foreign_keys=ON` and a test fixture that inserted rows out of order was fixed.
+- Alembic upgrade, `alembic check`, downgrade to base and upgrade again: clean on SQLite and
+  PostgreSQL. A `0002` database with legacy rows upgraded to `0003` with all backfills applied.
+- `docker compose up --build` with an override setting `ENFORCE_HTTPS=true`: all services healthy,
+  workers processed cases over internal HTTP, a reviewed case was dispatched through the caller
+  container and recorded as `delivered` with a sealed audit chain in PostgreSQL.
+- `pip-audit -r audit-requirements.txt`: no known vulnerabilities found.
+
+### Identity provider login (Keycloak)
+
+The OIDC console flow was exercised against Keycloak 26.0.7 in development mode:
+
+1. `docker run -p 127.0.0.1:8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=<local> -v ./ops/keycloak:/opt/keycloak/data/import:ro quay.io/keycloak/keycloak:26.0.7 start-dev --import-realm`
+   imports `ops/keycloak/medicare-realm.dev.json` (public PKCE client `medicare-console`, audience
+   mapper for `medicare-api`, a synthetic `reviewer` user). The file is for local verification only.
+2. With `kcadm.sh`: create an optional-in-token client scope named `medicare:review` and add it as a
+   default scope of `medicare-console`; add an `oidc-amr-mapper` to the client; add authenticator
+   configs with `default.reference.value` of `pwd` (Username Password Form) and `mfa` (OTP Form) on
+   the built-in browser flow; give the user the `CONFIGURE_TOTP` required action.
+3. Run the API with `REVIEWER_AUTH_MODE=oidc`, the realm's issuer, JWKS, authorization and token
+   URLs, `OIDC_CLIENT_ID=medicare-console`, `OIDC_AUDIENCE=medicare-api` and `OIDC_REQUIRE_MFA=true`.
+   Plain-HTTP OIDC URLs are accepted only for loopback hosts in `local`/`test`.
+
+Results: a password-only token (with valid signature, issuer, audience and scope) was refused with
+`403 Reviewer MFA claim is required`. After TOTP enrolment, a password + one-time-code login
+produced `amr: ["mfa"]`, the queue loaded with the bearer token and a review was stored with the
+Keycloak subject as `reviewer_id`. Copying Keycloak 26.0.7's built-in browser flow made the login
+page fail with `invalid_user_credentials` before any input, so the references were added to the
+built-in flow instead.
+
 ## Intentionally unverified or disabled
 
 - The OpenAI-backed model adapter was not called with a funded external key. The verified model path uses the real HTTP gateway in deterministic stub mode.

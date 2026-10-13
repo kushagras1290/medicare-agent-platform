@@ -7,7 +7,7 @@
 - `GET /metrics`: Prometheus text, protected by a service bearer token.
 - JSON request logs and `X-Request-ID` support request tracing without record payloads.
 
-Metrics cover request rate/latency, pending-review count and age, provider failures, dead letters, audit failures and worker heartbeat age. `ops/alerts.yml` turns those into safety and reliability alerts. The local Alertmanager receiver only keeps alerts visible; production must use an owned on-call route.
+Metrics cover request rate/latency, cases by status, pending-review count and age, provider failures, dead letters, leased outbox events, audit failures and worker heartbeat age. `ops/alerts.yml` turns those into safety and reliability alerts. The local Alertmanager receiver only keeps alerts visible; production must use an owned on-call route.
 
 ## Backup and recovery
 
@@ -17,7 +17,7 @@ For PostgreSQL, `scripts/postgres_backup_restore_drill.ps1` creates a custom-for
 
 ## Retention
 
-`medicare retention-sweep` previews closed cases older than `RETENTION_DAYS`. `--execute` is required to delete a bounded batch. The sweep removes reviews, provider metadata, outbox records and the corresponding case audit chain before deleting the case. Active, held, escalated and pending cases are not eligible.
+`medicare retention-sweep` previews closed cases (`dispatched`, `rejected`, `closed`, and `provider_failed` with no attempts left) older than `RETENTION_DAYS`. `--execute` is required to delete a bounded batch. The sweep removes reviews, provider metadata, outbox records and the corresponding case audit chain and seal before deleting the case, then records the deleted case IDs in a `retention_sweep` audit event. Active, held, escalated, pending and still-retryable cases are not eligible. Customer follow-up markers are kept, so a purged case never re-triggers automated contact.
 
 The command covers this synthetic schema. A real deployment would need an approved record schedule, legal holds and subject-rights workflow before real data could be enabled; this build does not enable it.
 
@@ -36,8 +36,8 @@ Rollback application images independently of the database. Prefer a forward-fix 
 
 ## Incident actions
 
-- **Gateway outage:** stop new automation if failures persist; no fallback proposal is allowed.
-- **Stuck/dead-letter event:** stop dispatch workers and inspect the case, holds and idempotency key. Never create a replacement event by hand.
+- **Gateway outage:** failed runs are retried automatically with backoff up to `PROVIDER_MAX_ATTEMPTS`; stop new automation if failures persist. No fallback proposal is allowed. `medicare retry-case <id>` retries one case manually.
+- **Stuck/dead-letter event:** leased events are reclaimed automatically after `OUTBOX_LEASE_SECONDS`. For dead letters, stop dispatch workers and inspect the case, holds and idempotency key. Never create a replacement event by hand.
 - **Audit failure:** stop mutations for the affected aggregate and preserve database/log evidence.
 - **Credential exposure:** remove the compromised key after an overlap rotation, restart its clients and review request IDs.
 - **Bad rule release:** stop workers, roll back the image, preserve cases for review and add a regression fixture.

@@ -1,0 +1,44 @@
+{
+  "realm": "medicare",
+  "enabled": true,
+  "users": [
+    {
+      "username": "reviewer",
+      "enabled": true,
+      "email": "reviewer@example.test",
+      "emailVerified": true,
+      "firstName": "Synthetic",
+      "lastName": "Reviewer",
+      "credentials": [
+        { "type": "password", "value": "Reviewer-Pass-2026", "temporary": false }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "medicare-console",
+      "name": "MediCare review console",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://127.0.0.1:18000/*"],
+      "webOrigins": ["http://127.0.0.1:18000"],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "+" },
+      "protocolMappers": [
+        {
+          "name": "medicare-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "medicare-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -29,9 +29,11 @@ Values are correlated enough to exercise software paths but are not a validated 
 ## Operational records
 
 - `consent_evidence`: versioned synthetic evidence for the `mock_follow_up` purpose. Missing, withheld or expired evidence creates a dispatch-blocking hold.
-- `follow_up_cases`: deterministic risk result, model proposal, policy holds and state version.
-- `human_reviews`: reviewer identity, decision, rationale and reviewed case version.
+- `customers.follow_up_started_at`: set when the first case is created; automation skips marked customers and retention never clears it.
+- `follow_up_cases`: deterministic risk result, the evidence snapshot sent to the model, model proposal (staff guidance plus a separate patient message), policy holds, provider attempt count and state version.
+- `human_reviews`: reviewer identity, decision, rationale, the approved patient message (approvals only) and reviewed case version.
 - `provider_calls`: provider/model, status, latency and request ID; request payloads are not stored.
 - `outbox_events`: idempotent mock-delivery request and status.
-- `audit_events`: hash-linked aggregate events.
+- `audit_events`: HMAC-linked aggregate events; `hash_version` 1 marks legacy unkeyed rows.
+- `audit_heads`: per-aggregate event count, newest hash and keyed seal used to detect truncation.
 - `worker_heartbeats`: latest worker timestamp, status and processed count without customer payloads.
