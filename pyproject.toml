@@ -40,11 +40,12 @@ packages = ["src/medicare_agent"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
+markers = ["sqlite_only: needs SQLite-specific behaviour; skipped when TEST_DATABASE_URL is set"]
 pythonpath = ["."]
 
 [tool.coverage.run]
 branch = true
-source = ["medicare_agent"]
+source = ["medicare_agent", "services"]
 
 [tool.coverage.report]
 fail_under = 100
@@ -57,6 +58,10 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
 ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures use URL and token literals that the secret heuristics misread as passwords.
+"tests/**" = ["S105", "S106"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -33,6 +33,18 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "Model provider failures increased"
+      - alert: MediCareProviderRunsStuck
+        expr: medicare_cases{status="provider_pending"} > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Agent runs have stayed in provider_pending; check the automation worker"
+      - alert: MediCareOutboxLeaseStuck
+        expr: medicare_outbox_processing > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Outbox events have stayed leased; check the dispatch worker"
       - alert: MediCareWorkerHeartbeatMissing
         expr: medicare_worker_heartbeat_age_seconds > 120
         for: 2m

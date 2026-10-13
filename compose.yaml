@@ -5,6 +5,7 @@ x-app-env: &app-env
   DATABASE_URL: postgresql+psycopg://medicare:${POSTGRES_PASSWORD:-local-demo-password}@db:5432/medicare
   SERVICE_API_KEY: ${SERVICE_API_KEY:-local-service-key-change-me-32-chars}
   REVIEWER_API_KEYS: ${REVIEWER_API_KEYS:-reviewer-demo:local-reviewer-key-change-me-32-chars}
+  AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:-local-audit-key-change-me-32-chars}
   MODEL_GATEWAY_URL: http://model-gateway:8091
   MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-local-gateway-key-change-me-32-chars}
   CALLER_SERVICE_URL: http://caller:8092
@@ -83,7 +84,7 @@ services:
       caller:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
       interval: 5s

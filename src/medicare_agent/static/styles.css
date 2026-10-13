@@ -140,7 +140,23 @@ textarea { width: 100%; min-height: 76px; padding: 10px; resize: vertical; font-
 .decision-actions .primary { background: var(--accent); color: var(--accent-ink); }
 .decision-actions .secondary { border: 1px solid var(--line-strong); background: transparent; color: var(--text); }
 .decision-actions .danger { border: 1px solid #553236; background: transparent; color: var(--red); }
+.review-error { margin: 11px 0 0; padding: 9px 11px; border: 1px solid #553236; border-radius: 7px; color: var(--red); font-size: .72rem; line-height: 1.45; }
 .policy-note { margin: 11px 0 0; color: var(--quiet); font-size: .65rem; line-height: 1.45; }
+
+.access-controls .secondary, .pager .secondary { border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
+.pager { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 14px; color: var(--quiet); font-size: .72rem; }
+.pager button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.evidence-meta { margin-bottom: 12px !important; color: var(--muted) !important; font-size: .72rem !important; }
+.evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.evidence-grid div { padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; }
+.evidence-grid span, .evidence-grid strong { display: block; }
+.evidence-grid span { color: var(--quiet); font-size: .6rem; text-transform: uppercase; }
+.evidence-grid strong { margin-top: 4px; font-size: .78rem; font-weight: 600; }
+.evidence-grid small { color: var(--quiet); font-size: .62rem; font-weight: 500; }
+.review-form label + label { margin-top: 12px; }
+.review-form label[hidden] + label { margin-top: 0; }
+.review-form textarea { min-height: 64px; }
+.decision-actions button[hidden], .review-form label[hidden] { display: none; }
 
 @media (max-width: 720px) {
   .app-bar { height: 58px; }

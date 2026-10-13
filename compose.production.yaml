@@ -7,6 +7,7 @@ services:
 
   model-gateway:
     environment:
+      ENVIRONMENT: production
       MODEL_GATEWAY_API_KEY: null
       MODEL_GATEWAY_API_KEY_FILE: /run/secrets/model_gateway_api_key
       OPENAI_API_KEY: null
@@ -15,7 +16,9 @@ services:
 
   caller:
     environment:
+      ENVIRONMENT: production
       CALLER_MODE: ${CALLER_MODE:?set CALLER_MODE to mock or http}
+      CALLER_PROVIDER_IS_SYNTHETIC_SANDBOX: ${CALLER_PROVIDER_IS_SYNTHETIC_SANDBOX:-false}
       CALLER_SERVICE_API_KEY: null
       CALLER_SERVICE_API_KEY_FILE: /run/secrets/caller_service_api_key
       CALLER_PROVIDER_URL: ${CALLER_PROVIDER_URL:-}
@@ -34,34 +37,40 @@ services:
       MODEL_GATEWAY_API_KEY_FILE: /run/secrets/model_gateway_api_key
       CALLER_SERVICE_API_KEY: null
       CALLER_SERVICE_API_KEY_FILE: /run/secrets/caller_service_api_key
+      AUDIT_HMAC_KEY: null
+      AUDIT_HMAC_KEY_FILE: /run/secrets/audit_hmac_key
       REVIEWER_AUTH_MODE: oidc
       OIDC_ISSUER: ${OIDC_ISSUER:?set OIDC_ISSUER}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:?set OIDC_AUDIENCE}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:?set OIDC_JWKS_URL}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set OIDC_CLIENT_ID}
+      OIDC_AUTHORIZATION_URL: ${OIDC_AUTHORIZATION_URL:?set OIDC_AUTHORIZATION_URL}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?set OIDC_TOKEN_URL}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:?set FORWARDED_ALLOW_IPS to the reverse proxy address}
       OIDC_REQUIRE_MFA: "true"
       ENFORCE_HTTPS: "true"
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set ALLOWED_HOSTS}
       RELEASE_APPROVALS_PATH: /run/config/release-approvals.json
       RELEASE_APPROVALS_SHA256: ${RELEASE_APPROVALS_SHA256:?set RELEASE_APPROVALS_SHA256}
-    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key, audit_hmac_key]
     volumes:
       - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
 
   api:
     environment: *production-app-env
-    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key, audit_hmac_key]
     volumes:
       - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
 
   automation-worker:
     environment: *production-app-env
-    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key, audit_hmac_key]
     volumes:
       - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
 
   dispatch-worker:
     environment: *production-app-env
-    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key]
+    secrets: [database_url, service_api_key, model_gateway_api_key, caller_service_api_key, audit_hmac_key]
     volumes:
       - ${RELEASE_APPROVALS_FILE:?set RELEASE_APPROVALS_FILE}:/run/config/release-approvals.json:ro
 
@@ -79,4 +88,6 @@ secrets:
   caller_service_api_key:
     external: true
   caller_provider_api_key:
+    external: true
+  audit_hmac_key:
     external: true

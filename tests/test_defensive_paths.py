@@ -96,6 +96,7 @@ def test_config_all_production_fail_closed_branches(tmp_path: Path) -> None:
         "service_api_key": "s" * 40,
         "model_gateway_api_key": "g" * 40,
         "caller_service_api_key": "c" * 40,
+        "audit_hmac_key": "a" * 40,
         "reviewer_auth_mode": "oidc",
         "oidc_issuer": "https://id.example.test/",
         "oidc_audience": "medicare-api",
@@ -104,17 +105,24 @@ def test_config_all_production_fail_closed_branches(tmp_path: Path) -> None:
         "service_api_key_file": tmp_path / "service",
         "model_gateway_api_key_file": tmp_path / "gateway",
         "caller_service_api_key_file": tmp_path / "caller",
+        "audit_hmac_key_file": tmp_path / "audit",
+        "oidc_client_id": "medicare-console",
+        "oidc_authorization_url": "https://id.example.test/authorize",
+        "oidc_token_url": "https://id.example.test/token",
         "enforce_https": True,
         "release_approvals_path": tmp_path / "approvals",
         "release_approvals_sha256": "a" * 64,
     }
     Path(str(valid["database_url_file"])).write_text(str(valid["database_url"]), encoding="utf-8")
-    for key, value in (("service", "s"), ("gateway", "g"), ("caller", "c")):
+    for key, value in (("service", "s"), ("gateway", "g"), ("caller", "c"), ("audit", "a")):
         (tmp_path / key).write_text(value * 40, encoding="utf-8")
 
     cases = [
         ({"reviewer_auth_mode": "api_key"}, "OIDC reviewer"),
         ({"oidc_issuer": None}, "issuer"),
+        ({"oidc_client_id": None}, "client ID"),
+        ({"oidc_token_url": "http://id.example.test/token"}, "HTTPS"),
+        ({"audit_hmac_key_file": None}, "file-mounted"),
         ({"database_url_file": None}, "file-mounted"),
         ({"enforce_https": False}, "HTTPS"),
         ({"release_approvals_path": None}, "approvals manifest"),
@@ -126,6 +134,7 @@ def test_config_all_production_fail_closed_branches(tmp_path: Path) -> None:
 
     reviewer_file = tmp_path / "reviewers"
     reviewer_file.write_text("alice:alice-reviewer-token-long-enough", encoding="utf-8")
+    assert Settings(**valid).audit_key() == b"a" * 40
     assert Settings(reviewer_api_keys_file=reviewer_file).reviewers()["alice"]
     assert Settings(reviewer_api_keys=",alice:alice-reviewer-token-long-enough,").reviewers()[
         "alice"
@@ -161,7 +170,7 @@ def test_database_dependency_commits_no_policy_and_rolls_back_errors(
     context = MagicMock()
     context.__enter__.return_value = fake
     context.__exit__.return_value = None
-    monkeypatch.setattr(db, "SessionLocal", lambda: context)
+    monkeypatch.setattr(db, "open_session", lambda: context)
     dependency = db.get_session()
     assert next(dependency) is fake
     dependency.close()
@@ -228,6 +237,7 @@ def test_api_envelope_rejects_ambiguous_shape() -> None:
         ApiEnvelope(success=True, error={"code": "bad", "message": "bad"})
 
 
+@pytest.mark.sqlite_only
 def test_service_missing_real_and_consent_edge_paths(
     session: Session,
     add_customer,
@@ -305,6 +315,7 @@ def test_concurrent_insert_conflict_paths(gateway_factory) -> None:
         rule_reasons_json='["test"]',
         policy_holds_json="[]",
         provider_error=None,
+        provider_attempts=1,
         version=1,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -411,7 +422,7 @@ def test_caller_dead_letters_after_max_attempt(
 def test_claim_lost_to_another_dispatcher_returns_empty(caller_factory) -> None:
     candidate = SimpleNamespace(id="event-1")
     session = MagicMock()
-    session.scalars.return_value.all.return_value = [candidate]
+    session.scalars.return_value.all.side_effect = [[], [candidate]]
     session.execute.return_value.rowcount = 0
     result = dispatch_one(session, "worker", caller_factory())
     assert result.status == "empty"
@@ -438,6 +449,7 @@ def test_http_clients_retry_server_errors(
                         "recommended_action": (
                             "Route this synthetic follow-up through a human reviewer."
                         ),
+                        "patient_message": "Synthetic reminder to book a follow-up visit.",
                         "contact_channel": "portal",
                         "reasoning_bullets": ["synthetic retry evidence"],
                         "requires_human_review": True,
@@ -511,3 +523,50 @@ def test_http_clients_retry_server_errors(
             "event-1",
         )
     assert attempts == 2
+
+
+def test_invalid_caller_body_is_treated_as_transient(settings: Settings) -> None:
+    from medicare_agent.caller import CallerUnavailableError
+    from medicare_agent.schemas import CallerRequest
+
+    client = CallerClient(
+        settings, transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"bad": 1}))
+    )
+    with pytest.raises(CallerUnavailableError, match="response invalid"):
+        client.place_call(
+            CallerRequest(
+                case_id="case-1",
+                customer_id="C00001",
+                channel="phone",
+                message="Synthetic approved reminder call.",
+                synthetic=True,
+                approved_by_human=True,
+            ),
+            "event-1",
+        )
+
+
+def test_database_factories_are_lazy_and_cached(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    sqlite_engine = db.build_engine(settings)
+    assert sqlite_engine.dialect.name == "sqlite"
+    sqlite_engine.dispose()
+    postgres = settings.model_copy(
+        update={"database_url": "postgresql+psycopg://user:pass@db.invalid/app"}
+    )
+    postgres_engine = db.build_engine(postgres)
+    assert postgres_engine.dialect.name == "postgresql"
+    postgres_engine.dispose()
+
+    db.get_engine.cache_clear()
+    db.get_sessionmaker.cache_clear()
+    monkeypatch.setattr(db, "get_settings", lambda: settings)
+    try:
+        assert db.get_engine() is db.get_engine()
+        with db.open_session() as opened:
+            assert opened.get_bind() is db.get_engine()
+    finally:
+        db.get_engine().dispose()
+        db.get_engine.cache_clear()
+        db.get_sessionmaker.cache_clear()

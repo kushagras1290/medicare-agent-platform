@@ -21,17 +21,24 @@ def _jwks_client(url: str) -> PyJWKClient:
 
 
 def _authenticate_oidc(token: str, settings: Settings) -> str:
-    assert settings.oidc_jwks_url
-    assert settings.oidc_issuer
-    assert settings.oidc_audience
+    jwks_url, issuer, audience = (
+        settings.oidc_jwks_url,
+        settings.oidc_issuer,
+        settings.oidc_audience,
+    )
+    if not jwks_url or not issuer or not audience:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OIDC reviewer authentication is not configured",
+        )
     try:
-        signing_key = _jwks_client(settings.oidc_jwks_url).get_signing_key_from_jwt(token)
+        signing_key = _jwks_client(jwks_url).get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
-            audience=settings.oidc_audience,
-            issuer=settings.oidc_issuer,
+            audience=audience,
+            issuer=issuer,
             options={"require": ["exp", "iat", "iss", "aud", "sub"]},
         )
     except (PyJWTError, ValueError) as exc:
@@ -40,7 +47,13 @@ def _authenticate_oidc(token: str, settings: Settings) -> str:
             detail="Invalid reviewer bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
-    scopes = set(str(claims.get("scope", "")).split())
+    # Some identity providers emit a space-delimited "scope", others an "scp" list.
+    raw_scope = claims.get("scope", claims.get("scp", ""))
+    scopes = (
+        {str(item) for item in raw_scope}
+        if isinstance(raw_scope, list)
+        else set(str(raw_scope).split())
+    )
     if settings.oidc_required_scope not in scopes:
         raise HTTPException(status_code=403, detail="Reviewer scope is required")
     amr = claims.get("amr", [])

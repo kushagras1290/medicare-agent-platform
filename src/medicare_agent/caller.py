@@ -6,11 +6,24 @@ from dataclasses import dataclass
 import httpx
 
 from medicare_agent.config import Settings
+from medicare_agent.http_retry import (
+    NonRetryableResponseError,
+    RetriesExhaustedError,
+    post_with_retries,
+)
 from medicare_agent.schemas import CallerRequest, CallerResponse
 
 
-class CallerUnavailableError(RuntimeError):
+class CallerError(RuntimeError):
     pass
+
+
+class CallerUnavailableError(CallerError):
+    """Transient failure; the outbox schedules another attempt."""
+
+
+class CallerRejectedError(CallerError):
+    """Permanent failure; retrying the same request cannot succeed, so it is dead-lettered."""
 
 
 @dataclass(frozen=True)
@@ -28,30 +41,33 @@ class CallerClient:
 
     def place_call(self, request: CallerRequest, idempotency_key: str) -> CallerResult:
         started = time.perf_counter()
-        last_error = "unknown caller error"
-        for attempt in range(self.settings.caller_max_retries + 1):
+        with httpx.Client(
+            base_url=self.settings.caller_service_url,
+            timeout=self.settings.caller_timeout_seconds,
+            transport=self.transport,
+        ) as client:
             try:
-                with httpx.Client(
-                    base_url=self.settings.caller_service_url,
-                    timeout=self.settings.caller_timeout_seconds,
-                    transport=self.transport,
-                ) as client:
-                    response = client.post(
-                        "/v1/calls",
-                        content=request.model_dump_json(),
-                        headers={
-                            "Content-Type": "application/json",
-                            "X-Caller-Key": self.settings.caller_service_api_key.get_secret_value(),
-                            "Idempotency-Key": idempotency_key,
-                        },
-                    )
-                if response.status_code < 500:
-                    response.raise_for_status()
-                    parsed = CallerResponse.model_validate(response.json())
-                    return CallerResult(parsed, round((time.perf_counter() - started) * 1000))
-                last_error = f"caller HTTP {response.status_code}"
-            except (httpx.HTTPError, ValueError) as exc:
-                last_error = f"{type(exc).__name__}: {str(exc)[:180]}"
-            if attempt < self.settings.caller_max_retries:
-                time.sleep(0.2 * (2**attempt))
-        raise CallerUnavailableError(last_error)
+                response = post_with_retries(
+                    client,
+                    "/v1/calls",
+                    content=request.model_dump_json(),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Caller-Key": self.settings.caller_service_api_key.get_secret_value(),
+                        "Idempotency-Key": idempotency_key,
+                    },
+                    max_retries=self.settings.caller_max_retries,
+                )
+            except NonRetryableResponseError as exc:
+                raise CallerRejectedError(f"caller {exc}") from exc
+            except RetriesExhaustedError as exc:
+                raise CallerUnavailableError(f"caller {exc}") from exc
+        try:
+            parsed = CallerResponse.model_validate(response.json())
+        except ValueError as exc:
+            # The call may have been accepted; retry under the same idempotency key to learn the
+            # outcome instead of dead-lettering a possibly delivered event.
+            raise CallerUnavailableError(
+                f"caller response invalid: {type(exc).__name__}: {str(exc)[:160]}"
+            ) from exc
+        return CallerResult(parsed, round((time.perf_counter() - started) * 1000))

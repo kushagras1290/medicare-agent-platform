@@ -11,12 +11,12 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: "0.12.3"
           enable-cache: true
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
       - run: uv sync --frozen --all-extras
@@ -24,7 +24,50 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy src services scripts
       - run: uv run pytest --cov --cov-report=term-missing
+      - name: Migrations apply cleanly and match the ORM models
+        env:
+          DATABASE_URL: sqlite:///./ci-migrations.db
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
       - run: uv run python scripts/generate_synthetic_data.py --validate-only
       - run: uv export --all-extras --no-emit-project --no-hashes --format requirements-txt > audit-requirements.txt
       - run: uv run pip-audit -r audit-requirements.txt
       - run: docker compose config --quiet
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: medicare
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: medicare_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medicare -d medicare_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://medicare:ci-only-password@127.0.0.1:5432/medicare_test
+      DATABASE_URL: postgresql+psycopg://medicare:ci-only-password@127.0.0.1:5432/medicare_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.3"
+          enable-cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --all-extras
+      - name: Test suite against PostgreSQL
+        run: uv run pytest -rs
+      - name: Migrations against PostgreSQL
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head

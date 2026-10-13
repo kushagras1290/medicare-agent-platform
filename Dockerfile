@@ -21,4 +21,6 @@ COPY --chown=app:app services ./services
 COPY --chown=app:app data ./data
 USER 10001:10001
 EXPOSE 8000
-CMD ["uvicorn", "medicare_agent.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Forwarded headers are trusted only from FORWARDED_ALLOW_IPS (uvicorn default: 127.0.0.1).
+# Production sets it to the reverse proxy address; never "*".
+CMD ["uvicorn", "medicare_agent.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

@@ -8,6 +8,21 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 SafeText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 CustomerId = Annotated[str, StringConstraints(pattern=r"^C\d{5}$")]
+PatientMessage = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=10, max_length=320)
+]
+
+
+class CaseStatus(StrEnum):
+    PROVIDER_PENDING = "provider_pending"
+    PROVIDER_FAILED = "provider_failed"
+    PENDING_REVIEW = "pending_review"
+    ON_HOLD = "on_hold"
+    HUMAN_ESCALATED = "human_escalated"
+    APPROVED = "approved"
+    DISPATCHED = "dispatched"
+    REJECTED = "rejected"
+    CLOSED = "closed"
 
 
 class RiskTier(StrEnum):
@@ -30,6 +45,8 @@ class AgentProposal(BaseModel):
     recommended_action: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=10, max_length=500)
     ]
+    # Staff-facing guidance lives in recommended_action; only patient_message may leave the system.
+    patient_message: PatientMessage
     contact_channel: ContactChannel
     reasoning_bullets: list[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=240)]
@@ -49,11 +66,18 @@ class AgentRunRequest(BaseModel):
 class ReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: Literal["approve", "reject", "hold"]
+    decision: Literal["approve", "reject", "hold", "close"]
     rationale: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=8, max_length=1000)
     ]
     expected_version: int = Field(ge=1)
+    patient_message: PatientMessage | None = None
+
+    @model_validator(mode="after")
+    def message_only_on_approval(self) -> ReviewRequest:
+        if self.patient_message is not None and self.decision != "approve":
+            raise ValueError("An edited patient message is only accepted with an approval")
+        return self
 
 
 class RuleAssessment(BaseModel):
@@ -133,15 +157,17 @@ class CallerResponse(BaseModel):
 class CaseResponse(BaseModel):
     id: str
     customer_id: str
-    status: str
+    status: CaseStatus
     rule_tier: RiskTier
     rule_reasons: list[str]
     policy_holds: list[str]
     proposal: AgentProposal | None
     provider_error: str | None
+    provider_attempts: int
     version: int
     created_at: datetime
     updated_at: datetime
+    snapshot: CustomerSnapshot | None = None
 
 
 class ListCasesResponse(BaseModel):
@@ -162,6 +188,19 @@ class DispatchResponse(BaseModel):
     outbox_event_id: str | None = None
     case_id: str | None = None
     status: str
+
+
+class MaintenanceResponse(BaseModel):
+    recovered_stale_runs: int
+    retry_case_ids: list[str]
+
+
+class AuditVerificationResponse(BaseModel):
+    case_id: str
+    valid: bool
+    sealed: bool
+    event_count: int
+    reason: str | None = None
 
 
 class ApiEnvelope(BaseModel):

@@ -28,6 +28,12 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def as_utc(value: datetime) -> datetime:
+    """Normalize database timestamps; SQLite returns naive values that are stored as UTC."""
+
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
@@ -39,6 +45,9 @@ class Customer(Base):
     consent_status: Mapped[str] = mapped_column(String(32), nullable=False)
     last_contact_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Durable "already handled" marker. Retention deletes cases, never this value, so a purged
+    # case can never make the customer eligible for a second automated follow-up.
+    follow_up_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -48,6 +57,7 @@ class Customer(Base):
     __table_args__ = (
         CheckConstraint("synthetic", name="ck_customers_synthetic_only"),
         Index("ix_customers_missed_appointment", "missed_appointment"),
+        Index("ix_customers_follow_up_queue", "missed_appointment", "follow_up_started_at"),
     )
 
 
@@ -109,7 +119,11 @@ class FollowUpCase(Base):
     rule_reasons_json: Mapped[str] = mapped_column(Text, nullable=False)
     policy_holds_json: Mapped[str] = mapped_column(Text, nullable=False)
     proposal_json: Mapped[str | None] = mapped_column(Text)
+    snapshot_json: Mapped[str | None] = mapped_column(Text)
     provider_error: Mapped[str | None] = mapped_column(String(300))
+    provider_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
@@ -132,6 +146,7 @@ class HumanReview(Base):
     reviewer_id: Mapped[str] = mapped_column(String(80), nullable=False)
     decision: Mapped[str] = mapped_column(String(16), nullable=False)
     rationale: Mapped[str] = mapped_column(String(1000), nullable=False)
+    approved_message: Mapped[str | None] = mapped_column(String(500))
     case_version: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
@@ -190,12 +205,34 @@ class AuditEvent(Base):
     data_json: Mapped[str] = mapped_column(Text, nullable=False)
     previous_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    hash_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=2, server_default="1"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
 
     __table_args__ = (
         Index("ix_audit_aggregate_created", "aggregate_type", "aggregate_id", "created_at"),
+        # One successor per link: two writers racing on the same head cannot fork the chain.
+        Index(
+            "uq_audit_chain_link", "aggregate_type", "aggregate_id", "previous_hash", unique=True
+        ),
+    )
+
+
+class AuditHead(Base):
+    """Keyed seal over each chain's length and newest hash, so truncation is detectable."""
+
+    __tablename__ = "audit_heads"
+
+    aggregate_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    aggregate_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    head_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    seal: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
 
 

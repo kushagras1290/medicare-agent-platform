@@ -9,7 +9,15 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
 </head>
-<body>
+<body
+  data-auth-mode="{{ auth_mode }}"
+  {% if oidc %}
+  data-oidc-client-id="{{ oidc.client_id }}"
+  data-oidc-authorization-url="{{ oidc.authorization_url }}"
+  data-oidc-token-url="{{ oidc.token_url }}"
+  data-oidc-scope="{{ oidc.scope }}"
+  {% endif %}
+>
   <header class="app-bar">
     <a class="brand" href="/" aria-label="MediCare review queue">
       <span class="brand-mark" aria-hidden="true">M</span>
@@ -28,13 +36,18 @@
       <div>
         <p class="kicker">Operations</p>
         <h1 id="queue-title">Follow-up reviews</h1>
-        <p class="subtitle">Agent proposals waiting for a human decision.</p>
+        <p class="subtitle">Agent proposals waiting for a human decision, oldest first.</p>
       </div>
       <div id="access-controls" class="access-controls">
+        {% if auth_mode == "oidc" %}
+        <button id="sign-in" type="button">Sign in</button>
+        <button id="sign-out" type="button" class="secondary" hidden>Sign out</button>
+        {% else %}
         <label class="key-field">
           <span>Reviewer key</span>
           <input id="reviewer-key" type="password" autocomplete="off" placeholder="Enter access key">
         </label>
+        {% endif %}
         <button id="refresh" type="button">Connect</button>
       </div>
     </section>
@@ -44,11 +57,14 @@
         <label for="status-filter">Status</label>
         <select id="status-filter">
           <option value="pending_review">Pending review</option>
+          <option value="on_hold">On hold</option>
           <option value="human_escalated">Human escalated</option>
           <option value="approved">Approved</option>
           <option value="dispatched">Dispatched</option>
           <option value="rejected">Rejected</option>
-          <option value="on_hold">On hold</option>
+          <option value="closed">Closed</option>
+          <option value="provider_failed">Provider failed</option>
+          <option value="provider_pending">Provider pending</option>
           <option value="">All cases</option>
         </select>
       </div>
@@ -65,10 +81,16 @@
         <div class="empty-state">
           <span class="empty-icon" aria-hidden="true">↗</span>
           <h2>Connect to the queue</h2>
-          <p>Enter the local reviewer key to load synthetic cases.</p>
+          <p>{% if auth_mode == "oidc" %}Sign in with your organization account to load synthetic cases.{% else %}Enter the local reviewer key to load synthetic cases.{% endif %}</p>
         </div>
       </div>
     </section>
+
+    <nav class="pager" aria-label="Queue pages">
+      <button id="previous-page" type="button" class="secondary" disabled>Previous</button>
+      <span id="page-label">Page 1</span>
+      <button id="next-page" type="button" class="secondary" disabled>Next</button>
+    </nav>
   </main>
 
   <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
@@ -79,6 +101,10 @@
     </header>
     <div id="case-detail" class="drawer-content"></div>
     <form id="review-form" class="review-form" hidden>
+      <label id="patient-message-field">
+        Patient message (sent only after approval)
+        <textarea id="patient-message" minlength="10" maxlength="320"></textarea>
+      </label>
       <label>
         Decision rationale
         <textarea id="rationale" minlength="8" maxlength="1000" required placeholder="Add a concise reviewer note"></textarea>
@@ -87,8 +113,10 @@
         <button type="submit" data-decision="approve" class="primary">Approve</button>
         <button type="submit" data-decision="hold" class="secondary">Hold</button>
         <button type="submit" data-decision="reject" class="danger">Reject</button>
+        <button type="submit" data-decision="close" class="secondary">Close escalation</button>
       </div>
-      <p class="policy-note">Cases with policy holds are escalated even when approved. They cannot enter dispatch.</p>
+      <p id="review-error" class="review-error" role="alert" hidden></p>
+      <p id="policy-note" class="policy-note">Cases with policy holds are escalated even when approved. They cannot enter dispatch.</p>
     </form>
   </aside>
 </body>

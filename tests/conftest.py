@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Generator
 from datetime import UTC, datetime
 
 import httpx
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from medicare_agent.caller import CallerClient
 from medicare_agent.config import Settings
-from medicare_agent.db import Base
+from medicare_agent.db import Base, enable_sqlite_foreign_keys
 from medicare_agent.models import ConsentEvidence, Customer, Observation
 from medicare_agent.provider import ModelGatewayClient
-from medicare_agent.schemas import AgentProposal, ContactChannel
+from tests.factories import REVIEWER_KEY, SAFE_PATIENT_MESSAGE, SERVICE_KEY, make_proposal
 
 
 @pytest.fixture
@@ -23,8 +24,9 @@ def settings() -> Settings:
     return Settings(
         environment="test",
         database_url="sqlite://",
-        service_api_key="test-service-key-at-least-32-characters",
-        reviewer_api_keys="reviewer-1:test-reviewer-key-at-least-32-characters",
+        service_api_key=SERVICE_KEY,
+        reviewer_api_keys=f"reviewer-1:{REVIEWER_KEY}",
+        audit_hmac_key="test-audit-key-at-least-32-characters",
         model_gateway_url="http://gateway.test",
         model_gateway_api_key="test-gateway-key-at-least-32-characters",
         model_gateway_max_retries=0,
@@ -34,15 +36,36 @@ def settings() -> Settings:
     )
 
 
-@pytest.fixture
-def session() -> Generator[Session, None, None]:
+def _test_engine() -> Engine:
+    # TEST_DATABASE_URL runs the suite against a disposable PostgreSQL database; the default is
+    # an in-memory SQLite database shared across the test's connections.
+    url = os.getenv("TEST_DATABASE_URL")
+    if url:
+        return create_engine(url)
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    enable_sqlite_foreign_keys(engine)
+    return engine
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    if not os.getenv("TEST_DATABASE_URL"):
+        return
+    skip = pytest.mark.skip(reason="relies on SQLite-only behaviour")
+    for item in items:
+        if "sqlite_only" in item.keywords:
+            item.add_marker(skip)
+
+
+@pytest.fixture
+def session() -> Generator[Session, None, None]:
+    engine = _test_engine()
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     with factory() as db_session:
         yield db_session
     Base.metadata.drop_all(engine)
@@ -97,7 +120,9 @@ def add_customer(session: Session) -> Callable[..., Customer]:
             captured_at=datetime(2026, 10, 1, tzinfo=UTC),
             synthetic=True,
         )
-        session.add_all([customer, observation, consent_evidence])
+        session.add(customer)
+        session.flush()
+        session.add_all([observation, consent_evidence])
         session.commit()
         return customer
 
@@ -107,7 +132,12 @@ def add_customer(session: Session) -> Callable[..., Customer]:
 @pytest.fixture
 def gateway_factory(settings: Settings) -> Callable[..., ModelGatewayClient]:
     def _make(
-        *, prohibited: bool = False, fail: bool = False, malformed: bool = False
+        *,
+        prohibited: bool = False,
+        fail: bool = False,
+        malformed: bool = False,
+        status_code: int | None = None,
+        patient_message: str = SAFE_PATIENT_MESSAGE,
     ) -> ModelGatewayClient:
         def handler(request: httpx.Request) -> httpx.Response:
             if fail:
@@ -116,6 +146,8 @@ def gateway_factory(settings: Settings) -> Callable[..., ModelGatewayClient]:
                 request.headers["X-Gateway-Key"]
                 == settings.model_gateway_api_key.get_secret_value()
             )
+            if status_code is not None:
+                return httpx.Response(status_code)
             if malformed:
                 return httpx.Response(200, json={"unexpected": True})
             action = (
@@ -123,13 +155,7 @@ def gateway_factory(settings: Settings) -> Callable[..., ModelGatewayClient]:
                 if prohibited
                 else "A human reviewer should approve a routine mock portal follow-up."
             )
-            proposal = AgentProposal(
-                summary="Synthetic record reviewed through the isolated HTTP model gateway.",
-                recommended_action=action,
-                contact_channel=ContactChannel.PORTAL,
-                reasoning_bullets=["no_synthetic_demo_flags"],
-                requires_human_review=True,
-            )
+            proposal = make_proposal(recommended_action=action, patient_message=patient_message)
             return httpx.Response(
                 200,
                 json={
@@ -147,7 +173,7 @@ def gateway_factory(settings: Settings) -> Callable[..., ModelGatewayClient]:
 
 @pytest.fixture
 def caller_factory(settings: Settings) -> Callable[..., CallerClient]:
-    def _make(*, fail: bool = False) -> CallerClient:
+    def _make(*, fail: bool = False, status_code: int | None = None) -> CallerClient:
         def handler(request: httpx.Request) -> httpx.Response:
             if fail:
                 raise httpx.ConnectError("simulated caller outage", request=request)
@@ -156,6 +182,8 @@ def caller_factory(settings: Settings) -> Callable[..., CallerClient]:
                 == settings.caller_service_api_key.get_secret_value()
             )
             assert request.headers["Idempotency-Key"]
+            if status_code is not None:
+                return httpx.Response(status_code)
             return httpx.Response(
                 200,
                 json={
