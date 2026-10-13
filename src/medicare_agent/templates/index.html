@@ -6,6 +6,8 @@
   <meta name="color-scheme" content="dark">
   <title>MediCare Review Console</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/instrument-serif-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/ibm-plex-sans-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
 </head>
@@ -18,41 +20,61 @@
   data-oidc-scope="{{ oidc.scope }}"
   {% endif %}
 >
-  <header class="app-bar">
-    <a class="brand" href="/" aria-label="MediCare review queue">
-      <span class="brand-mark" aria-hidden="true">M</span>
-      <span><strong>MediCare</strong><small>Review queue</small></span>
+  <div class="ambient" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="frame">
+    <a class="wordmark" href="/" aria-label="MediCare review console">
+      <span class="wordmark-name">MediCare</span>
+      <span class="wordmark-tag">Review console</span>
     </a>
-    <div class="environment"><span></span> Synthetic environment</div>
+    <p class="specimen" aria-label="Safety notice">
+      <span class="specimen-dot" aria-hidden="true"></span>
+      <strong>Simulation only</strong>
+      <span class="specimen-detail">Synthetic records, rules and mock dispatch. Not for clinical use or real-patient contact.</span>
+    </p>
+    <div id="access-controls" class="access-controls">
+      {% if auth_mode == "oidc" %}
+      <button id="sign-in" type="button" class="button button-ghost">Sign in</button>
+      <button id="sign-out" type="button" class="button button-ghost" hidden>Sign out</button>
+      {% else %}
+      <label class="key-field">
+        <span class="visually-hidden">Reviewer key</span>
+        <input id="reviewer-key" type="password" autocomplete="off" placeholder="Reviewer key">
+      </label>
+      {% endif %}
+      <button id="refresh" type="button" class="button button-solid">Connect</button>
+    </div>
   </header>
 
   <main class="shell">
-    <section class="notice" aria-label="Safety notice">
-      <span>Simulation only</span>
-      Synthetic records, rules and mock dispatches. Not approved for clinical use or real-patient contact.
+    <section class="opening" aria-labelledby="queue-title">
+      <div class="opening-copy">
+        <p class="eyebrow">Human-in-the-loop · follow-up desk</p>
+        <h1 id="queue-title">Follow-up <em>reviews</em></h1>
+        <p class="lede">Agent proposals waiting for a human decision, oldest first. Nothing reaches a patient until you approve it.</p>
+      </div>
+      <figure class="pipeline" aria-label="Automation runs freely until the human review gate">
+        <svg viewBox="0 0 640 120" role="img" aria-hidden="true" focusable="false">
+          <path class="pipeline-track" d="M20 60 H620"></path>
+          <path class="pipeline-flow" d="M20 60 H368"></path>
+          <path class="pipeline-after" d="M392 60 H620"></path>
+          <g class="pipeline-node"><circle cx="40" cy="60" r="5"></circle><text x="40" y="96">Agent</text></g>
+          <g class="pipeline-node"><circle cx="150" cy="60" r="5"></circle><text x="150" y="96">Rules</text></g>
+          <g class="pipeline-node"><circle cx="260" cy="60" r="5"></circle><text x="260" y="96">Guardrails</text></g>
+          <g class="pipeline-gate">
+            <circle class="gate-halo" cx="380" cy="60" r="22"></circle>
+            <circle class="gate-core" cx="380" cy="60" r="9"></circle>
+            <text x="380" y="24">You</text>
+          </g>
+          <g class="pipeline-node is-held"><circle cx="490" cy="60" r="5"></circle><text x="490" y="96">Outbox</text></g>
+          <g class="pipeline-node is-held"><circle cx="600" cy="60" r="5"></circle><text x="600" y="96">Caller</text></g>
+        </svg>
+        <figcaption>Automation flows up to the gate. Dispatch waits on a human decision.</figcaption>
+      </figure>
     </section>
 
-    <section class="queue-header" aria-labelledby="queue-title">
-      <div>
-        <p class="kicker">Operations</p>
-        <h1 id="queue-title">Follow-up reviews</h1>
-        <p class="subtitle">Agent proposals waiting for a human decision, oldest first.</p>
-      </div>
-      <div id="access-controls" class="access-controls">
-        {% if auth_mode == "oidc" %}
-        <button id="sign-in" type="button">Sign in</button>
-        <button id="sign-out" type="button" class="secondary" hidden>Sign out</button>
-        {% else %}
-        <label class="key-field">
-          <span>Reviewer key</span>
-          <input id="reviewer-key" type="password" autocomplete="off" placeholder="Enter access key">
-        </label>
-        {% endif %}
-        <button id="refresh" type="button">Connect</button>
-      </div>
-    </section>
-
-    <section class="toolbar" aria-label="Queue controls">
+    <section class="ledger-bar" aria-label="Queue controls">
       <div class="filter-group">
         <label for="status-filter">Status</label>
         <select id="status-filter">
@@ -68,18 +90,24 @@
           <option value="">All cases</option>
         </select>
       </div>
-      <p class="queue-meta"><strong id="case-count">—</strong> <span id="count-label">cases</span><i></i><span id="last-updated">Not connected</span></p>
+      <dl class="tally" aria-label="Queue summary">
+        <div><dt>Total</dt><dd><span id="case-count">—</span> <span id="count-label" class="tally-unit">cases</span></dd></div>
+        <div class="tally-tier urgent"><dt>Urgent</dt><dd id="tally-urgent">—</dd></div>
+        <div class="tally-tier review"><dt>Review</dt><dd id="tally-review">—</dd></div>
+        <div class="tally-tier routine"><dt>Routine</dt><dd id="tally-routine">—</dd></div>
+        <div class="tally-time"><dt>Synced</dt><dd id="last-updated">Not connected</dd></div>
+      </dl>
     </section>
 
     <div id="message" class="message" role="status" aria-live="polite"></div>
 
-    <section class="queue" aria-label="Follow-up cases">
-      <div class="queue-columns" aria-hidden="true">
-        <span>Customer</span><span>Rule signal</span><span>Created</span><span></span>
+    <section class="ledger" aria-label="Follow-up cases">
+      <div class="ledger-head" aria-hidden="true">
+        <span>Customer</span><span>Signal</span><span>Holds</span><span>Waiting</span><span></span>
       </div>
       <div id="case-list" class="case-list">
         <div class="empty-state">
-          <span class="empty-icon" aria-hidden="true">↗</span>
+          <span class="empty-mark" aria-hidden="true"></span>
           <h2>Connect to the queue</h2>
           <p>{% if auth_mode == "oidc" %}Sign in with your organization account to load synthetic cases.{% else %}Enter the local reviewer key to load synthetic cases.{% endif %}</p>
         </div>
@@ -87,33 +115,37 @@
     </section>
 
     <nav class="pager" aria-label="Queue pages">
-      <button id="previous-page" type="button" class="secondary" disabled>Previous</button>
+      <button id="previous-page" type="button" class="button button-ghost" disabled>Previous</button>
       <span id="page-label">Page 1</span>
-      <button id="next-page" type="button" class="secondary" disabled>Next</button>
+      <button id="next-page" type="button" class="button button-ghost" disabled>Next</button>
     </nav>
   </main>
 
   <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
-  <aside id="review-drawer" class="review-drawer" aria-labelledby="drawer-title" aria-hidden="true">
+  <aside id="review-drawer" class="review-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true" data-tier="routine">
     <header class="drawer-header">
-      <div><p class="kicker">Human decision</p><h2 id="drawer-title">Case</h2></div>
+      <div class="drawer-identity">
+        <p class="eyebrow">Case file · human decision</p>
+        <h2 id="drawer-title">Case</h2>
+      </div>
+      <span id="tier-stamp" class="stamp" aria-hidden="true">routine</span>
       <button id="close-drawer" class="icon-button" type="button" aria-label="Close case">×</button>
     </header>
     <div id="case-detail" class="drawer-content"></div>
     <form id="review-form" class="review-form" hidden>
-      <label id="patient-message-field">
-        Patient message (sent only after approval)
+      <label id="patient-message-field" class="field">
+        <span class="field-label">Patient message <em>sent only after approval</em></span>
         <textarea id="patient-message" minlength="10" maxlength="320"></textarea>
       </label>
-      <label>
-        Decision rationale
+      <label class="field">
+        <span class="field-label">Decision rationale</span>
         <textarea id="rationale" minlength="8" maxlength="1000" required placeholder="Add a concise reviewer note"></textarea>
       </label>
       <div class="decision-actions">
-        <button type="submit" data-decision="approve" class="primary">Approve</button>
-        <button type="submit" data-decision="hold" class="secondary">Hold</button>
-        <button type="submit" data-decision="reject" class="danger">Reject</button>
-        <button type="submit" data-decision="close" class="secondary">Close escalation</button>
+        <button type="submit" data-decision="approve" class="decision decision-approve">Approve</button>
+        <button type="submit" data-decision="hold" class="decision">Hold</button>
+        <button type="submit" data-decision="reject" class="decision decision-reject">Reject</button>
+        <button type="submit" data-decision="close" class="decision">Close escalation</button>
       </div>
       <p id="review-error" class="review-error" role="alert" hidden></p>
       <p id="policy-note" class="policy-note">Cases with policy holds are escalated even when approved. They cannot enter dispatch.</p>

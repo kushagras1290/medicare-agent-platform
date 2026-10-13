@@ -87,8 +87,9 @@ def case_response(case: FollowUpCase, *, include_snapshot: bool = False) -> Case
         provider_error=case.provider_error,
         provider_attempts=case.provider_attempts,
         version=case.version,
-        created_at=case.created_at,
-        updated_at=case.updated_at,
+        # SQLite hands back naive datetimes; emit explicit UTC so clients never read local time.
+        created_at=as_utc(case.created_at),
+        updated_at=as_utc(case.updated_at),
         snapshot=CustomerSnapshot.model_validate_json(case.snapshot_json)
         if include_snapshot and case.snapshot_json
         else None,

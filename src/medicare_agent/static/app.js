@@ -34,7 +34,7 @@ const EVIDENCE_FIELDS = [
 
 const config = document.body.dataset;
 const isOidc = config.authMode === "oidc";
-const state = { cases: [], selected: null, offset: 0, total: 0 };
+const state = { cases: [], selected: null, opener: null, offset: 0, total: 0 };
 const $ = (selector) => document.querySelector(selector);
 
 class SessionExpiredError extends Error {}
@@ -188,19 +188,54 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
+const TIERS = ["urgent", "review", "routine"];
+
+function tierOf(item) {
+  return TIERS.includes(item.rule_tier) ? item.rule_tier : "routine";
+}
+
+function waitingFor(value) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+function renderTally() {
+  for (const tier of TIERS) {
+    $(`#tally-${tier}`).textContent = state.cases.filter((item) => tierOf(item) === tier).length;
+  }
+}
+
 function renderCases() {
   const list = $("#case-list");
+  renderTally();
   if (!state.cases.length) {
-    list.innerHTML = `<div class="empty-state"><span class="empty-icon">✓</span><h2>Queue clear</h2><p>No cases match this status.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><span class="empty-mark" aria-hidden="true"></span><h2>Queue clear</h2><p>No cases match this status.</p></div>`;
     return;
   }
-  list.innerHTML = state.cases.map((item) => `
-    <button class="case-row" type="button" data-case-id="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.customer_id)}">
+  list.innerHTML = state.cases.map((item) => {
+    const holds = item.policy_holds.length;
+    return `
+    <button class="case-row ${tierOf(item)}" type="button" data-case-id="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(item.customer_id)}, ${escapeHtml(tierOf(item))} tier">
       <span class="identity"><strong>${escapeHtml(item.customer_id)}</strong><span>${escapeHtml(item.id.slice(0, 8))}</span></span>
-      <span class="signal"><em class="tier ${escapeHtml(item.rule_tier)}">${escapeHtml(item.rule_tier)}</em><strong>${escapeHtml(concise(item.rule_reasons[0]))}</strong><span>${escapeHtml(concise(item.status))}</span></span>
-      <span class="created">${formatDate(item.created_at)}</span><span class="chevron" aria-hidden="true">›</span>
-    </button>`).join("");
-  list.querySelectorAll("[data-case-id]").forEach((row) => row.addEventListener("click", () => selectCase(row.dataset.caseId)));
+      <span class="signal"><span class="tier">${escapeHtml(tierOf(item))}</span><strong>${escapeHtml(concise(item.rule_reasons[0]))}</strong><span class="status">${escapeHtml(concise(item.status))}</span></span>
+      <span class="holds ${holds ? "has-holds" : ""}">${holds ? `${holds} hold${holds === 1 ? "" : "s"}` : "none"}</span>
+      <span class="waiting"><strong>${escapeHtml(waitingFor(item.created_at))}</strong><span>${escapeHtml(formatDate(item.created_at))}</span></span>
+      <span class="chevron" aria-hidden="true">→</span>
+    </button>`;
+  }).join("");
+  list.querySelectorAll("[data-case-id]").forEach((row, index) => {
+    row.style.setProperty("--i", String(Math.min(index, 12)));
+    row.addEventListener("click", () => selectCase(row.dataset.caseId, row));
+  });
+}
+
+function setAccent(tier) {
+  if (tier) document.documentElement.dataset.accent = tier;
+  else delete document.documentElement.dataset.accent;
 }
 
 function renderPager() {
@@ -212,8 +247,13 @@ function renderPager() {
 }
 
 function closeDrawer() {
-  // Move focus out before hiding the drawer from assistive technology.
-  if ($("#review-drawer").contains(document.activeElement)) $("#refresh").focus();
+  // Return focus to the row that opened the case before hiding the drawer from assistive tech.
+  if ($("#review-drawer").contains(document.activeElement)) {
+    const opener = state.opener && document.contains(state.opener) ? state.opener : $("#refresh");
+    opener.focus();
+  }
+  state.opener = null;
+  setAccent(null);
   $("#review-drawer").classList.remove("open");
   $("#review-drawer").setAttribute("aria-hidden", "true");
   $("#drawer-backdrop").hidden = true;
@@ -222,6 +262,7 @@ function closeDrawer() {
 }
 
 function openDrawer() {
+  $("#case-detail").scrollTop = 0;
   $("#drawer-backdrop").hidden = false;
   $("#review-drawer").classList.add("open");
   $("#review-drawer").setAttribute("aria-hidden", "false");
@@ -300,17 +341,22 @@ function configureReviewForm(item) {
     : "Cases with policy holds are escalated even when approved. They cannot enter dispatch.";
 }
 
-async function selectCase(caseId) {
+async function selectCase(caseId, opener = null) {
   try {
     const item = await api(`/api/v1/cases/${encodeURIComponent(caseId)}`);
     state.selected = item;
+    state.opener = opener;
     const proposal = item.proposal;
+    const tier = tierOf(item);
+    $("#review-drawer").dataset.tier = tier;
+    $("#tier-stamp").textContent = tier;
+    setAccent(tier);
     $("#drawer-title").textContent = item.customer_id;
     $("#case-detail").innerHTML = `
       <section class="detail-section"><div class="detail-grid"><div><span>Rule tier</span><strong>${escapeHtml(item.rule_tier)}</strong></div><div><span>Status</span><strong>${escapeHtml(concise(item.status))}</strong></div><div><span>Case version</span><strong>${escapeHtml(item.version)}</strong></div><div><span>Provider attempts</span><strong>${escapeHtml(item.provider_attempts)}</strong></div></div></section>
       <section class="detail-section"><h3>Evidence the agent saw</h3>${evidenceMarkup(item.snapshot)}</section>
       <section class="detail-section"><h3>Deterministic signals</h3>${listMarkup(item.rule_reasons)}</section>
-      <section class="detail-section"><h3>Policy holds</h3>${listMarkup(item.policy_holds)}</section>
+      <section class="detail-section holds-section"><h3>Policy holds</h3>${listMarkup(item.policy_holds)}</section>
       <section class="detail-section"><h3>Agent summary</h3><p>${escapeHtml(proposal?.summary || item.provider_error || "No proposal available.")}</p></section>
       <section class="detail-section"><h3>Staff guidance</h3><p>${escapeHtml(proposal?.recommended_action || "None")}</p></section>
       <section class="detail-section"><h3>Contact channel</h3><p>${escapeHtml(concise(proposal?.contact_channel || "none"))}</p></section>
@@ -318,6 +364,7 @@ async function selectCase(caseId) {
     configureReviewForm(item);
     openDrawer();
     const audit = await api(`/api/v1/cases/${encodeURIComponent(item.id)}/audit-verification`);
+    $("#audit-status").classList.add(audit.valid ? "audit-valid" : "audit-invalid");
     if (!audit.valid) {
       $("#audit-status").textContent = `Invalid (${concise(audit.reason)}) — stop processing`;
     } else {

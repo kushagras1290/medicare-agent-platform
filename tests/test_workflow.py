@@ -68,9 +68,14 @@ def test_agent_run_is_idempotent_audited_and_marks_customer(
     assert verify_audit_chain(session, "follow_up_case", first.id).valid
     customer = session.get(Customer, "C00001")
     assert customer is not None and customer.follow_up_started_at is not None
+    session.expire_all()
     stored = session.get(FollowUpCase, first.id)
     assert stored is not None
-    assert case_response(stored, include_snapshot=True).snapshot is not None
+    reloaded = case_response(stored, include_snapshot=True)
+    assert reloaded.snapshot is not None
+    # Timestamps read back from the database must serialize as explicit UTC.
+    assert reloaded.created_at.utcoffset() == timedelta(0)
+    assert reloaded.model_dump(mode="json")["created_at"].endswith("Z")
 
     marker = customer.follow_up_started_at
     manual = service.run("C00001", "manual-rerun-0001", "operator")

@@ -47,16 +47,21 @@ The generated measurements are blood pressure, heart rate, oxygen saturation, te
 
 ## Reviewer console
 
-The console keeps the queue compact (oldest first, paginated) and moves case evidence, guardrail
-holds, the proposal and the decision controls into a focused review drawer. Screenshots were
+The console is a near-black editorial interface with one accent at a time: the accent is the risk
+tier of the case in view (sea-glass routine, amber review, signal-red urgent), so colour always tells
+the reviewer what they are looking at. The opening frame shows the pipeline itself: automation flows
+up to a glowing human gate and the outbox and caller stay dark until a decision is made. The queue is
+oldest first and paginated; each case opens as a tier-stamped case file with the evidence, guardrail
+holds, proposal and decision controls. Fonts are self-hosted (SIL OFL), the layout works down to
+phone width, and every animation is disabled under `prefers-reduced-motion`. Screenshots were
 captured on 2026-10-13 from a local run against the real API, model gateway and seeded 10,000-row
 synthetic dataset.
 
-**Review queue.** Pending cases, oldest first, with the deterministic rule signal for each.
+**Review queue.** Pending cases, oldest first, with each case's tier rail, rule signal, hold count and time waiting.
 
 ![MediCare review queue](docs/assets/review-queue.png)
 
-**Case drawer.** Rule tier, status, version and provider attempts, then the decision form. The
+**Case file.** Tier stamp, status, version and provider attempts, then the decision form. The
 patient message is pre-filled from the proposal and is the only text that can leave the system.
 
 ![MediCare case review drawer](docs/assets/review-drawer.png)
